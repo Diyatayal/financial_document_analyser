@@ -12,3 +12,5 @@
 12.) Unpin langsmith==0.1.67 → replace with langsmith>=0.3.18,<0.4.0
 13.) Explicitly add tiktoken>=0.8.0
 14-) Explicitly add chromadb>=0.5.23
+15.) Error during loading LLM in Agents.py as not specifying the model, load llm from crewai and also initialize it.
+16.) In agents.py it should be tools in place of tool.
