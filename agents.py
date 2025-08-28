@@ -4,13 +4,10 @@ from dotenv import load_dotenv
 load_dotenv()
 
 from crewai import LLM
-
-from crewai.agents import Agent
-
-from tools import search_tool, FinancialDocumentTool,InvestmentTool,RiskTool
+from crewai import Agent
+from tools import financial_document_tool, search_tool, investment_tool, risk_tool
 
 ### Loading LLM
-
 llm = LLM(
     model="gemini-1.5-flash",
     temperature=0.7,
@@ -18,26 +15,25 @@ llm = LLM(
     api_key=os.getenv("GEMINI_API_KEY")
 )
 
-
 # Creating an Experienced Financial Analyst agent
-financial_analyst=Agent(
-    role="Senior Financial Analyst Who Knows Everything About Markets",
-    goal="Analyze financial data, market reports, and investment opportunities to provide accurate, data-driven insights for decision making.",
+financial_analyst = Agent(
+    role="Senior Financial Analyst",
+    goal="Analyze financial documents to extract key metrics, trends, and provide comprehensive financial insights for decision making.",
     verbose=True,
     memory=True,
     backstory=(
         "You are an experienced financial analyst with deep expertise in equity markets, "
-        "corporate finance, and risk management. "
-        "You carefully study financial documents, market trends, and economic indicators "
-        "to provide well-reasoned investment strategies. "
-        "Your advice is always professional, structured, and based on credible data sources. "
-        "You emphasize risk factors, compliance, and realistic expectations while guiding clients."
+        "corporate finance, and financial statement analysis. "
+        "You carefully study financial documents, extract key metrics, and identify trends "
+        "to provide well-reasoned financial insights. "
+        "Your analysis is always professional, structured, and based on credible data sources. "
+        "You focus on financial performance, growth trends, and overall company health."
     ),
-    tools=[FinancialDocumentTool.read_data_tool,search_tool,InvestmentTool.analyze_investment_tool],
+    tools=[financial_document_tool, search_tool],
     llm=llm,
     max_iter=3,
-    max_rpm=2,
-    allow_delegation=True  # Allow delegation to other specialists
+    max_rpm=10,
+    allow_delegation=True
 )
 
 # Creating a document verifier agent
@@ -46,72 +42,74 @@ verifier = Agent(
     goal=(
         "Verify whether the uploaded document is a valid financial document. "
         "Check for accuracy, consistency, and relevance to financial analysis. "
-        "Reject documents that are unrelated (e.g., grocery lists, personal notes)."
+        "Identify document type and ensure it contains financial information."
     ),
     verbose=True,
     memory=True,
     backstory=(
-        "You are a meticulous financial compliance specialist. "
-        "Your job is to carefully review and validate documents to ensure they are "
-        "authentic and relevant for financial analysis. "
-        "You prioritize accuracy, integrity, and compliance with financial standards. "
-        "You reject irrelevant or suspicious documents and only approve valid ones."
+        "You are a meticulous financial compliance specialist with expertise in "
+        "document verification and validation. Your job is to carefully review "
+        "documents to ensure they are authentic financial documents suitable for analysis. "
+        "You can identify various types of financial documents like annual reports, "
+        "quarterly statements, balance sheets, income statements, and cash flow statements. "
+        "You reject irrelevant documents and only approve valid financial documents."
     ),
-    tools=[FinancialDocumentTool.read_data_tool],
+    tools=[financial_document_tool],
     llm=llm,
-    max_iter=2,
-    max_rpm=1,
-    allow_delegation=True
-)
-
-
-investment_advisor = Agent(
-    role="Investment Guru and Fund Salesperson",
-    goal=(
-        "Identify and prioritize material financial risks present in the uploaded document. "
-        "For each risk category (market, liquidity, credit, operational, regulatory): "
-        "provide a concise description, an assessed likelihood (Low / Medium / High), "
-        "an estimated impact (qualitative or quantitative), the key evidence from the document, "
-        "and at least one practical mitigation or monitoring recommendation. "
-        "Flag any data gaps or assumptions that require follow-up."
-    ),
-    verbose=True,
-    backstory=(
-        "You are a senior risk analyst with experience in corporate finance, credit analysis, "
-        "and enterprise risk management. You focus on evidence-based assessment: you extract "
-        "relevant facts from financial statements and disclosures, quantify exposures when "
-        "possible, and use simple scenario checks to evaluate downside risk. You prioritize "
-        "clarity, separate objective findings from opinion, and always call out uncertainties "
-        "and compliance concerns that need further review."
-    ),
-    tools=[search_tool,InvestmentTool.analyze_investment_tool],
-    llm=llm,
-    memory=True,
     max_iter=2,
     max_rpm=5,
     allow_delegation=False
 )
 
-
-risk_assessor = Agent(
-    role="Extreme Risk Assessment Expert",
+# Fixed investment advisor agent
+investment_advisor = Agent(
+    role="Investment Advisor and Portfolio Strategist",
     goal=(
-        "Analyze the financial document and identify potential risks across multiple categories: "
-        "market, liquidity, credit, operational, and regulatory. "
-        "Provide a concise risk assessment including likelihood, impact, key evidence from the document, "
-        "and actionable recommendations for mitigation or monitoring. "
-        "Highlight assumptions, data gaps, and uncertainties for further review."
+        "Analyze financial documents to provide actionable investment recommendations. "
+        "Evaluate company performance, profitability, growth potential, and market position "
+        "to determine buy, sell, or hold recommendations with clear reasoning. "
+        "Consider valuation metrics, financial health, and market conditions in recommendations."
     ),
     verbose=True,
     backstory=(
-        "You are a seasoned risk management professional with experience in corporate finance and investment analysis. "
-        "Your expertise includes assessing financial statements, market trends, and regulatory requirements to evaluate risk exposure. "
-        "You focus on providing clear, data-driven risk assessments that help stakeholders make informed decisions. "
-        "You prioritize accuracy, thoroughness, and practical recommendations while ensuring that all major risks are identified."
+        "You are a seasoned investment advisor with extensive experience in portfolio management "
+        "and equity research. You specialize in analyzing company financials to identify "
+        "investment opportunities and risks. Your recommendations are based on thorough "
+        "analysis of financial metrics, industry trends, and market conditions. "
+        "You provide clear, actionable investment advice with supporting rationale "
+        "and always consider risk-adjusted returns in your recommendations."
     ),
-    tools=[FinancialDocumentTool.read_data_tool, search_tool,RiskTool.create_risk_assessment_tool],
+    tools=[financial_document_tool, investment_tool, search_tool],
     llm=llm,
-    max_iter=2,
-    max_rpm=1,
+    memory=True,
+    max_iter=3,
+    max_rpm=5,
+    allow_delegation=False
+)
+
+# Risk assessor agent
+risk_assessor = Agent(
+    role="Risk Management Specialist",
+    goal=(
+        "Identify and assess financial risks across multiple categories including "
+        "market, liquidity, credit, operational, and regulatory risks. "
+        "Provide detailed risk analysis with likelihood assessments, impact evaluations, "
+        "supporting evidence, and practical mitigation recommendations. "
+        "Flag critical risks that require immediate attention."
+    ),
+    verbose=True,
+    backstory=(
+        "You are a seasoned risk management professional with expertise in enterprise "
+        "risk assessment and financial risk analysis. Your background includes corporate "
+        "finance, credit analysis, and regulatory compliance. You excel at identifying "
+        "potential risks from financial documents and market data, quantifying their "
+        "impact, and developing practical risk mitigation strategies. "
+        "You prioritize evidence-based risk assessment and provide actionable "
+        "recommendations to help organizations manage their risk exposure effectively."
+    ),
+    tools=[financial_document_tool, risk_tool],
+    llm=llm,
+    max_iter=3,
+    max_rpm=5,
     allow_delegation=False
 )

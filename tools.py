@@ -1,165 +1,253 @@
-## Importing libraries and files
 import os
+import re
+import fitz  # PyMuPDF
 from dotenv import load_dotenv
+from crewai.tools import BaseTool
+from crewai_tools import SerperDevTool
+
+# Load environment variables
 load_dotenv()
-from crewai_tools import Pdf
+serper_api_key = os.getenv("SERPER_API_KEY")
 
-from crewai_tools import tools
-from crewai_tools.tools.serper_dev_tool import SerperDevTool
+# Initialize search tool
+search_tool = SerperDevTool(api_key=serper_api_key)
 
-## Creating search tool
-search_tool = SerperDevTool()
 
-## Creating custom pdf reader tool
-class FinancialDocumentTool():
-    @staticmethod
-    def read_data_tool(path='data/TSLA-Q2-2025-Update.pdf'):
-        """Tool to read data from a pdf file from a path
+# -----------------------
+# PDF Reader Tool
+# -----------------------
+class FinancialDocumentTool(BaseTool):
+    name: str = "financial_document_tool"
+    description: str = "Reads PDF financial documents and extracts the text content."
 
-        Args:
-            path (str, optional): Path of the pdf file. Defaults to 'data/TSLA-Q2-2025-Update.pdf'.
+    def _run(self, file_path: str) -> str:
+        """Read PDF and return its text"""
+        try:
+            if not os.path.exists(file_path):
+                return f"Error: File not found at {file_path}"
+            
+            text = ""
+            doc = fitz.open(file_path)
+            for page in doc:
+                text += page.get_text() + "\n"
+            doc.close()
+            
+            if not text.strip():
+                return "Error: No text content found in the PDF"
+            
+            return text
+        except Exception as e:
+            return f"Error reading PDF: {str(e)}"
 
-        Returns:
-            str: Full Financial Document file
-        """
-        
-        docs = Pdf(file_path=path).load()
 
-        full_report = ""
-        for data in docs:
-           content = data.page_content.replace("\n\n", "\n")
-           full_report += content + "\n"
+financial_document_tool = FinancialDocumentTool()
 
-        return full_report
 
-## Creating Investment Analysis Tool
-class InvestmentTool:
-    @staticmethod
-    def analyze_investment_tool(financial_document_data):
-        """
-        Processes financial document data and extracts key insights
-        for investment decision-making.
+# ---------------------------
+# Investment Analysis Tool
+# ---------------------------
+class InvestmentTool(BaseTool):
+    name: str = "investment_tool"
+    description: str = "Analyzes financial document text to provide investment insights."
 
-        Args:
-            financial_document_data (str): The text of the financial document.
+    def _run(self, financial_document_data: str) -> dict:
+        """Analyze financial data for investment insights"""
+        try:
+            processed_data = " ".join(financial_document_data.split())
 
-        Returns:
-            dict: A dictionary containing financial metrics and investment insights.
-        """
-        # Clean the data
-        processed_data = " ".join(financial_document_data.split())  # remove extra spaces
+            # Extract financial metrics using regex
+            revenue_patterns = [
+                r"Revenue[:\s]*\$?([\d,]+(?:\.\d+)?)",
+                r"Total Revenue[:\s]*\$?([\d,]+(?:\.\d+)?)",
+                r"Net Revenue[:\s]*\$?([\d,]+(?:\.\d+)?)"
+            ]
+            
+            profit_patterns = [
+                r"(?:Net )?Profit[:\s]*\$?([\d,]+(?:\.\d+)?)",
+                r"Net Income[:\s]*\$?([\d,]+(?:\.\d+)?)",
+                r"Earnings[:\s]*\$?([\d,]+(?:\.\d+)?)"
+            ]
+            
+            debt_patterns = [
+                r"(?:Total )?Debt[:\s]*\$?([\d,]+(?:\.\d+)?)",
+                r"Total Liabilities[:\s]*\$?([\d,]+(?:\.\d+)?)"
+            ]
 
-        # Example logic: extract some financial metrics (simulated)
-        import re
+            def extract_value(patterns, text):
+                for pattern in patterns:
+                    match = re.search(pattern, text, re.I)
+                    if match:
+                        return float(match.group(1).replace(",", ""))
+                return None
 
-        revenue_match = re.search(r"Revenue[:\s]\$?([\d,.]+)", processed_data)
-        profit_match = re.search(r"Profit[:\s]\$?([\d,.]+)", processed_data)
-        debt_match = re.search(r"Debt[:\s]\$?([\d,.]+)", processed_data)
+            revenue = extract_value(revenue_patterns, processed_data)
+            profit = extract_value(profit_patterns, processed_data)
+            debt = extract_value(debt_patterns, processed_data)
 
-        revenue = float(revenue_match.group(1).replace(",", "")) if revenue_match else None
-        profit = float(profit_match.group(1).replace(",", "")) if profit_match else None
-        debt = float(debt_match.group(1).replace(",", "")) if debt_match else None
+            insights = []
+            
+            # Calculate metrics if data is available
+            if profit and revenue:
+                profit_margin = (profit / revenue) * 100
+                insights.append(f"Profit margin is {profit_margin:.2f}%")
+                if profit_margin > 20:
+                    insights.append("Strong profitability - Consider BUY")
+                elif profit_margin > 10:
+                    insights.append("Moderate profitability - HOLD recommended")
+                else:
+                    insights.append("Low profitability - Exercise caution")
+                    
+            if debt and revenue:
+                debt_to_revenue = (debt / revenue) * 100
+                insights.append(f"Debt-to-Revenue ratio: {debt_to_revenue:.1f}%")
+                if debt_to_revenue > 100:
+                    insights.append("High debt burden - Risk of financial distress")
+                    
+            if debt:
+                insights.append(f"Total debt: ${debt:,}")
+                if debt > 1_000_000_000:
+                    insights.append("High debt level - Monitor cash flow carefully")
 
-        # Generate simple insights
-        insights = []
-        if profit and revenue:
-            profit_margin = (profit / revenue) * 100
-            insights.append(f"Profit margin is {profit_margin:.2f}%")
-            if profit_margin > 20:
-                insights.append("The company has strong profitability.")
+            return {
+                "metrics": {
+                    "revenue": revenue,
+                    "profit": profit,
+                    "debt": debt
+                },
+                "insights": insights
+            }
+        except Exception as e:
+            return {"error": f"Investment analysis failed: {str(e)}"}
+
+
+investment_tool = InvestmentTool()
+
+
+# ---------------------------
+# Risk Assessment Tool
+# ---------------------------
+class RiskTool(BaseTool):
+    name: str = "risk_tool"
+    description: str = "Performs comprehensive risk assessment on financial document text."
+
+    def _run(self, financial_document_data: str) -> dict:
+        """Perform risk assessment on financial data"""
+        try:
+            risks = []
+            text_lower = financial_document_data.lower()
+
+            # Market risk assessment
+            market_risk_keywords = ['loss', 'decline', 'drop', 'downturn', 'volatility', 'market risk']
+            market_risk_count = sum(1 for keyword in market_risk_keywords if keyword in text_lower)
+            
+            if market_risk_count >= 3:
+                risks.append({
+                    "type": "Market Risk",
+                    "likelihood": "High",
+                    "impact": "High",
+                    "evidence": f"Multiple market risk indicators found ({market_risk_count} keywords)",
+                    "mitigation": "Diversify portfolio and consider hedging strategies"
+                })
+            elif market_risk_count >= 1:
+                risks.append({
+                    "type": "Market Risk",
+                    "likelihood": "Medium",
+                    "impact": "Medium",
+                    "evidence": f"Some market risk indicators found ({market_risk_count} keywords)",
+                    "mitigation": "Monitor market conditions closely"
+                })
             else:
-                insights.append("Profitability is moderate or low.")
-        if debt:
-            insights.append(f"Total debt is ${debt:,}")
-            if debt > 1_000_000_000:
-                insights.append("The company has high debt. Be cautious!")
+                risks.append({
+                    "type": "Market Risk",
+                    "likelihood": "Low",
+                    "impact": "Low",
+                    "evidence": "No significant market risk indicators found",
+                    "mitigation": "Standard market monitoring"
+                })
 
-        return {
-            "metrics": {
-                "revenue": revenue,
-                "profit": profit,
-                "debt": debt
-            },
-            "insights": insights
-        }
-
-
-## Creating Risk Assessment Tool
-class RiskTool:
-    @staticmethod
-    def create_risk_assessment_tool(financial_document_data):
-        """
-        Evaluates financial risks based on the document content.
-
-        Args:
-            financial_document_data (str): The text of the financial document.
-
-        Returns:
-            dict: Risk assessment report with likelihood and impact.
-        """
-        import re
-
-        # Example: identify high-level risks
-        risks = []
-
-        # Market risk (high if revenue fluctuates a lot)
-        if re.search(r"(loss|decline|drop)", financial_document_data, re.I):
-            risks.append({
-                "type": "Market Risk",
-                "likelihood": "High",
-                "impact": "High",
-                "evidence": "Mentions of loss, decline, or drop in financial performance.",
-                "mitigation": "Diversify investments and monitor market trends closely."
-            })
-        else:
-            risks.append({
-                "type": "Market Risk",
-                "likelihood": "Medium",
-                "impact": "Medium",
-                "evidence": "No major negative trends detected.",
-                "mitigation": "Monitor revenue and profit trends regularly."
-            })
-
-        # Credit risk (based on debt)
-        debt_match = re.search(r"Debt[:\s]\$?([\d,.]+)", financial_document_data)
-        if debt_match:
-            debt = float(debt_match.group(1).replace(",", ""))
-            if debt > 1_000_000_000:
-                likelihood = "High"
-                impact = "High"
+            # Credit risk assessment
+            debt_match = re.search(r"(?:Total )?Debt[:\s]*\$?([\d,]+(?:\.\d+)?)", financial_document_data, re.I)
+            debt = float(debt_match.group(1).replace(",", "")) if debt_match else 0
+            
+            if debt > 5_000_000_000:
+                likelihood, impact = "High", "High"
+                evidence = f"Very high debt level: ${debt:,}"
+                mitigation = "Immediate debt restructuring may be required"
+            elif debt > 1_000_000_000:
+                likelihood, impact = "Medium", "High"
+                evidence = f"High debt level: ${debt:,}"
+                mitigation = "Monitor debt service coverage and refinancing options"
+            elif debt > 0:
+                likelihood, impact = "Low", "Medium"
+                evidence = f"Moderate debt level: ${debt:,}"
+                mitigation = "Regular debt monitoring recommended"
             else:
-                likelihood = "Medium"
-                impact = "Medium"
-        else:
-            likelihood = "Low"
-            impact = "Low"
-
-        risks.append({
-            "type": "Credit Risk",
-            "likelihood": likelihood,
-            "impact": impact,
-            "evidence": f"Total debt detected: {debt if debt_match else 'Not reported'}",
-            "mitigation": "Maintain conservative debt exposure and monitor debt ratios."
-        })
-
-        # Operational risk (dummy example)
-        if "recall" in financial_document_data.lower() or "lawsuit" in financial_document_data.lower():
+                likelihood, impact = "Low", "Low"
+                evidence = "No significant debt found"
+                mitigation = "Maintain current debt management practices"
+                
             risks.append({
-                "type": "Operational Risk",
-                "likelihood": "High",
-                "impact": "High",
-                "evidence": "Mentions of recall or lawsuit in the document.",
-                "mitigation": "Review operational processes and legal compliance."
-            })
-        else:
-            risks.append({
-                "type": "Operational Risk",
-                "likelihood": "Low",
-                "impact": "Low",
-                "evidence": "No operational issues detected.",
-                "mitigation": "Maintain regular audits and monitoring."
+                "type": "Credit Risk",
+                "likelihood": likelihood,
+                "impact": impact,
+                "evidence": evidence,
+                "mitigation": mitigation
             })
 
-        return {
-            "risk_report": risks
-        }
+            # Operational risk assessment
+            operational_keywords = ['recall', 'lawsuit', 'litigation', 'regulatory', 'compliance', 'investigation']
+            operational_issues = [keyword for keyword in operational_keywords if keyword in text_lower]
+            
+            if operational_issues:
+                risks.append({
+                    "type": "Operational Risk",
+                    "likelihood": "High",
+                    "impact": "High",
+                    "evidence": f"Operational issues found: {', '.join(operational_issues)}",
+                    "mitigation": "Implement stronger compliance and operational controls"
+                })
+            else:
+                risks.append({
+                    "type": "Operational Risk",
+                    "likelihood": "Low",
+                    "impact": "Medium",
+                    "evidence": "No major operational issues identified",
+                    "mitigation": "Continue standard operational risk monitoring"
+                })
+
+            # Liquidity risk assessment
+            liquidity_keywords = ['cash flow', 'liquidity', 'working capital', 'current assets', 'current liabilities']
+            liquidity_mentions = sum(1 for keyword in liquidity_keywords if keyword in text_lower)
+            
+            if 'cash flow' in text_lower and ('negative' in text_lower or 'deficit' in text_lower):
+                risks.append({
+                    "type": "Liquidity Risk",
+                    "likelihood": "High",
+                    "impact": "High",
+                    "evidence": "Negative cash flow indicators found",
+                    "mitigation": "Secure additional funding sources and improve cash management"
+                })
+            elif liquidity_mentions > 0:
+                risks.append({
+                    "type": "Liquidity Risk",
+                    "likelihood": "Medium",
+                    "impact": "Medium",
+                    "evidence": f"Liquidity metrics mentioned {liquidity_mentions} times",
+                    "mitigation": "Monitor liquidity ratios and cash position"
+                })
+            else:
+                risks.append({
+                    "type": "Liquidity Risk",
+                    "likelihood": "Low",
+                    "impact": "Medium",
+                    "evidence": "Limited liquidity information available",
+                    "mitigation": "Request detailed cash flow analysis"
+                })
+
+            return {"risk_report": risks}
+            
+        except Exception as e:
+            return {"error": f"Risk assessment failed: {str(e)}"}
+
+
+risk_tool = RiskTool()
