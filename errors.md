@@ -14,3 +14,15 @@
 14-) Explicitly add chromadb>=0.5.23
 15.) Error during loading LLM in Agents.py as not specifying the model, load llm from crewai and also initialize it.
 16.) In agents.py it should be tools in place of tool.
+17.) Added search_tool to financial_analyst agent and also investment advisor agent.
+18.) Corrected goal and backstory of each agent.
+19.) max_iter → increased to 3 (so it can refine its analysis a bit more).
+20.) max_rpm → made 2 instead of 1, so it can call tools slightly more flexibly.
+21.) In verifier agent multiple lines are written without brackets.
+22.) Added financial_document tool to verifier.
+23.) Added memory to investment agent.
+24.) Wrong path in tools.py.
+25.) pdf not imported in tools.py file.
+26.) async is not aligned with await so i removed async.
+27.) Add @staticmethod if you don’t want to instantiate the class to call it.
+28.) Added investementTool to agents.py and added it to investor and financial_analyst agent.
